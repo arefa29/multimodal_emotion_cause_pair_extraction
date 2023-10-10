@@ -18,6 +18,7 @@ class CustomDataset(Dataset):
         self.video_input_path = os.path.join(os.path.join(args.input_dir, args.video_input_dir), args.videos_folder)
         self.text_embeddings, self.emotion_labels, self.convo_lengths, self.cause_labels, self.given_emotions = self.get_text_embeddings(args.embedding_path, args.labels_path, args.lengths_path, args.causes_path, args.given_emotions_path)
         self.emotion_idx = dict(zip(['anger', 'disgust', 'fear', 'sadness', 'neutral','joy','surprise'], range(7)))
+        self.seed = args.seed
 
     def __len__(self):
         return len(self.text_embeddings)
@@ -151,7 +152,6 @@ class CustomDataset(Dataset):
             new_text_embeddings.append(convo_list)
             lengths.append(length)
         return new_text_embeddings, causes, lengths
-
 
 def extract_videos(file_name):
     f = tarfile.open(file_name)

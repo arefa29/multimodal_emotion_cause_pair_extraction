@@ -57,7 +57,8 @@ def parse(args):
     parser.add_argument("--lengths_path",type=str,default="./data/saved/lengths1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/lengths1.pkl' for subtask 1")
     parser.add_argument("--causes_path",type=str,default="./data/saved/causes1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/causes1.pkl' for subtask 1")
     parser.add_argument("--given_emotions_path",type=str,default="./data/saved/given_emotions1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/given_emotions1.pkl' for subtask 1")
-
+    # K-fold cross validation
+    parser.add_argument("--kfold",type=int,default=10,help="Value of k for k-fold cross val")
     all_args = parser.parse_known_args(args)[0]
     return all_args
 

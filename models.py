@@ -47,9 +47,12 @@ class MultipleCauseClassifier(nn.Module):
 
         # Linear layers for each tensor
         self.linear_layers = nn.ModuleList([nn.Linear(input_dim, num_labels) for _ in range(num_utt_tensors)])
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        probabilities = [linear(tensor) for tensor, linear in zip(x, self.linear_layers)]
+        for tensor, linear in zip(x, self.linear_layers):
+            tensor_probs = self.softmax(linear(tensor))
+            probabilities.append(tensor_probs)
         return probabilities
 
 class EmotionCausePairClassifierModel(nn.Module):
