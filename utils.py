@@ -45,3 +45,6 @@ def get_stacked_tensor(list_of_list_of_tensors):
     """Converts a list of list of tensors to a pytorch tensor"""
     stacked_tensor = torch.stack([torch.stack(sublist, dim=0) for sublist in list_of_list_of_tensors], dim=0)
     return stacked_tensor
+
+def print_time():
+    print('\n----------{}----------'.format(time.strftime("%Y-%m-%d %X", time.localtime())))

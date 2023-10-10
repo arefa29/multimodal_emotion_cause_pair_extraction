@@ -4,40 +4,10 @@ import torch
 from transformers import BertModel, BertTokenizer
 from torch.utils.data import Dataset, DataLoader
 import json
-import time
 import tarfile
 import argparse
 import pickle
 from utils import get_stacked_tensor
-
-def print_time():
-    print('\n----------{}----------'.format(time.strftime("%Y-%m-%d %X", time.localtime())))
-
-def parse(args):
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--task",type=int,default=1,help="Subtask 1 or 2")
-    # Input directory and file names
-    parser.add_argument("--input_dir",type=str,default="./data",help="Path to input directory")
-    parser.add_argument("--text_input_dir",type=str,default="text",help="Path to text input files within input_dir")
-    parser.add_argument("--video_input_dir",type=str,default="video",help="Path to video input folders within input_dir")
-    parser.add_argument("--text_file",type=str,default="Subtask_2_1_train.json",help="Json file for text input within text_input_dir")
-    parser.add_argument("--videos_folder",type=str,default="train", help="Folder to mp4 videos within video_inpupt_dir")
-    # Embedding
-    parser.add_argument("--embedding_dim",type=float,default=768,help="dimension for word embedding")
-    parser.add_argument("--embedding_dim_pos",type=float,default=50,help="dimensions for position embedding")
-    # Input structure
-    parser.add_argument("--max_sen_len",type=int,default=64,help="Max number of tokens per sentence")
-    parser.add_argument("--max_convo_len",type=int,default=35,help="Max number of utterances per conversation")
-    # Paths for saving computed values
-    parser.add_argument("--embedding_path",type=str,default="./data/saved/embeddings1.pkl",help="Path to already computed embeddings. Defaults to './data/saved/embeddings1.pkl' for subtask 1")
-    parser.add_argument("--labels_path",type=str,default="./data/saved/labels1.pkl",help="Path to already computed emotion labels. Defaults to './data/saved/labels1.pkl' for subtask 1")
-    parser.add_argument("--lengths_path",type=str,default="./data/saved/lengths1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/lengths1.pkl' for subtask 1")
-    parser.add_argument("--causes_path",type=str,default="./data/saved/causes1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/causes1.pkl' for subtask 1")
-    parser.add_argument("--given_emotions_path",type=str,default="./data/saved/given_emotions1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/given_emotions1.pkl' for subtask 1")
-
-    all_args = parser.parse_known_args(args)[0]
-    return all_args
 
 class CustomDataset(Dataset):
     def __init__(self, args):
@@ -125,7 +95,7 @@ class CustomDataset(Dataset):
 
             print("\nShape of each sentence embedding for utterance: {}".format(sent_embedding.shape))
             # pad convo_embeddings with zero torch tensors of 768 dim upto max_convo_len
-            text_embeddings, lengths = self.pad_conversation_lists(text_embeddings)
+            text_embeddings, causes, lengths = self.pad_conversation_lists(text_embeddings, causes)
             # convert list of list of tensors to a pytorch tensor
             text_embeddings = get_stacked_tensor(text_embeddings)
             # Save the embeddings and emotion labels
@@ -156,8 +126,8 @@ class CustomDataset(Dataset):
             return text_embeddings, emo_labels, lengths, causes, given_emo_utt
         #emb = get_text_embeddings('a')
 
-    def pad_conversation_lists(self, text_embeddings):
-        """Takes a list of conversation embeddings of varying lengths
+    def pad_conversation_lists(self, text_embeddings, causes):
+        """Takes a list of conversation embeddings and cause labels of varying lengths
         and pads them / trims them to max_convo_len defined
         and also returns the actual lengths of conversations"""
         # determine dimension of each utt tensor, 768
@@ -166,19 +136,21 @@ class CustomDataset(Dataset):
         new_text_embeddings = []
         lengths = []
 
-        for convo_list in text_embeddings:
+        for convo_list, cause_vec in zip(text_embeddings, causes):
             length = 0
             num_padding = self.max_convo_len - len(convo_list)
             if num_padding > 0:
                 padding = [padding_tensor.clone() for _ in range(num_padding)]
                 convo_list.extend(padding)
                 length = len(convo_list)
+                cause_vec.extend(torch.zeros(num_padding))
             else:
                 convo_list = convo_list[:self.max_convo_len]
                 length = self.max_convo_len
+                cause_vec = cause_vec[:self.max_convo_len]
             new_text_embeddings.append(convo_list)
             lengths.append(length)
-        return new_text_embeddings, lengths
+        return new_text_embeddings, causes, lengths
 
 
 def extract_videos(file_name):
@@ -186,18 +158,3 @@ def extract_videos(file_name):
     f.extractall('./data/{}/videos'.format(file_name))
     f.close
 
-def main():
-    args = parse(sys.argv[1:])
-    if torch.cuda.is_available():
-        device = 'cuda'
-    else:
-        device = 'cpu'
-    args.device = device
-    # Create folder for saving embeddings and other computed quantities
-    saved_dir_path = os.path.join((args.input_dir), 'saved')
-    if not os.path.exists(saved_dir_path):
-        os.makedirs(saved_dir_path)
-    task1_dataset = CustomDataset(args)
-
-if __name__ == '__main__':
-    main()
