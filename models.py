@@ -58,8 +58,8 @@ class EmotionCausePairClassifierModel(nn.Module):
 
         self.args = args
 
-        self.transformer_model = EmbeddingModifierTransformer(args.input_dim_transformer, args.hidden_dim_transformer, args.num_head_transformer, args.num_layers_transformer)
-        self.classifier = nn.MultipleCauseClassifier(args.input_dim_transformer * 2, args.max_convo_len, args.max_convo_len) # output dim of transformer as input dim and we concat 2 of them hence *2
+        self.transformer_model = EmbeddingModifierTransformer(args.input_dim_transformer, args.hidden_dim_transformer, args.num_heads_transformer, args.num_layers_transformer)
+        self.classifier = MultipleCauseClassifier(args.input_dim_transformer * 2, args.max_convo_len, args.max_convo_len) # output dim of transformer as input dim and we concat 2 of them hence *2
 
     def forward(self, input_embeddings, emotion_idxs):
         modified_embeddings = self.transformer_model(input_embeddings)
@@ -69,7 +69,7 @@ class EmotionCausePairClassifierModel(nn.Module):
             pairs = []
             emotion_id = emotion_idxs[idx]
             for j in range(len(convo)):
-                pair = torch.concat(convo[j], convo[emotion_id], dim=0)
+                pair = torch.cat((convo[j], convo[emotion_id]))
                 pairs.append(pair)
             utt_pairs.append(pairs)
         # Convert to torch tensor

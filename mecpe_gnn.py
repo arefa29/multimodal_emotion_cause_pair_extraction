@@ -9,7 +9,7 @@ import torch
 import argparse
 import pickle
 
-from models import EmotionCauseClassifierModel
+from models import EmotionCausePairClassifierModel
 from prepare_data import CustomDataset
 
 # Command line arguments
@@ -65,7 +65,11 @@ def run(args):
     # Create dataset for task 1
     dataset = CustomDataset(args)
 
-    model = EmotionCauseClassifierModel(args.input_dim_transformer, args.hidden_dim_transformer, args.num_heads_transformer, args.num_layers_transformer)
+    model = EmotionCausePairClassifierModel(args)
+    predictions = model(dataset.text_embeddings, dataset.given_emotions)
+    print("Predictions len: {}".format(len(predictions)))
+    print("Each prediction len: {}".format(len(predictions[0])))
+    print("Predictions 00: {}".format(predictions[0][0]))
 
 def main():
     args = parse(sys.argv[1:])

@@ -143,7 +143,7 @@ class CustomDataset(Dataset):
                 padding = [padding_tensor.clone() for _ in range(num_padding)]
                 convo_list.extend(padding)
                 length = len(convo_list)
-                cause_vec.extend(torch.zeros(num_padding))
+                cause_vec = torch.cat((cause_vec, torch.zeros(num_padding)))
             else:
                 convo_list = convo_list[:self.max_convo_len]
                 length = self.max_convo_len
