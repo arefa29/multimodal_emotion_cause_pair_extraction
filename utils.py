@@ -1,8 +1,11 @@
 import pathlib
+from pathlib import Path
 import os
 import torch
 import numpy as np
 import random
+import warnings
+import torch
 
 # config for wandb
 class config:
@@ -38,3 +41,7 @@ def seed_worker(_worker_id):
     np.random.seed(worker_seed)
     random.seed(worker_seed)
 
+def get_stacked_tensor(list_of_list_of_tensors):
+    """Converts a list of list of tensors to a pytorch tensor"""
+    stacked_tensor = torch.stack([torch.stack(sublist, dim=0) for sublist in list_of_list_of_tensors], dim=0)
+    return stacked_tensor
