@@ -10,6 +10,25 @@ import pickle
 from utils import get_stacked_tensor
 
 class CustomDataset(Dataset):
+    def __init__(self, input_embeddings, y_cause_labels, true_lengths):
+        self.x_input_embeddings = input_embeddings
+        self.y_cause_labels = y_cause_labels
+        self.true_lengths = true_lengths
+
+    def __len__(self):
+        return len(self.x_input_embeddings)
+
+    df __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        sample = {
+            'input_embeddings': self.x_input_embeddings[idx],
+            'y_cause_labels': self.y_cause_labels[idx],
+            'true_lengths': self.true_lengths[idx],
+        }
+        return sample
+
+class CustomDataGenerator():
     def __init__(self, args):
         self.device = args.device
         self.max_sen_len = args.max_sen_len
@@ -22,15 +41,6 @@ class CustomDataset(Dataset):
 
     def __len__(self):
         return len(self.text_embeddings)
-
-    def __getitem__(self, idx):
-        sample = {
-            'embeddings': self.text_embeddings[idx], 
-            'given_emotion': self.given_emotions[idx], 
-            'cause_label': self.cause_labels[idx],
-            'num_utterances': self.convo_lengths[idx],
-        }
-        return sample
 
     def get_text_embeddings(self, embedding_path, labels_path, lengths_path, causes_path, given_emotions_path):
         if not os.path.exists(embedding_path):
