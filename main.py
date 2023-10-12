@@ -8,9 +8,16 @@ import os
 import torch
 import argparse
 import pickle
+import numpy as np
+import importlib
 
-from models import EmotionCausePairClassifierModel
-from prepare_data import CustomDataset
+import prepare_data
+import wrapper
+
+importlib.reload(wrapper)
+
+from prepare_data import CustomDataGenerator
+from wrapper import Wrapper
 
 # Command line arguments
 def parse(args):
@@ -29,8 +36,8 @@ def parse(args):
     parser.add_argument("--input_dir",type=str, default='./data', help='path to input directory', required=False)
     parser.add_argument("--output_dir", type=str, default='./output/', required=False)
     # training args
-    parser.add_argument("--batch_size", type=int, default=32, help='number of example per batch', required=False)
-    parser.add_argument("--epochs", type=int, default=10, help='Number of epochs', required=False)
+    parser.add_argument("--batch_size", type=int, default=4, help='number of example per batch', required=False)
+    parser.add_argument("--num_epochs", type=int, default=10, help='Number of epochs', required=False)
     parser.add_argument("--lr", type=float, default=0.005, required=False)
     parser.add_argument("--l2_reg", type=float,default=1e-5,required=False,help="l2 regularization")
     parser.add_argument("--no_cuda", action="store_true", help="sets device to CPU", required=False)
@@ -58,19 +65,11 @@ def parse(args):
     parser.add_argument("--causes_path",type=str,default="./data/saved/causes1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/causes1.pkl' for subtask 1")
     parser.add_argument("--given_emotions_path",type=str,default="./data/saved/given_emotions1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/given_emotions1.pkl' for subtask 1")
     # K-fold cross validation
-    parser.add_argument("--kfold",type=int,default=10,help="Value of k for k-fold cross val")
+    parser.add_argument("--kfold",type=int,default=5,help="Value of k for k-fold cross val")
+    parser.add_argument("--threshold",type=float,default=0.4,help="Threshold applied after the sigmoid for getting True (1) predictions")
+
     all_args = parser.parse_known_args(args)[0]
     return all_args
-
-def run(args):
-    # Create dataset for task 1
-    dataset = CustomDataset(args)
-
-    model = EmotionCausePairClassifierModel(args)
-    predictions = model(dataset.text_embeddings, dataset.given_emotions)
-    print("Predictions len: {}".format(len(predictions)))
-    print("Each prediction len: {}".format(len(predictions[0])))
-    print("Predictions 00: {}".format(predictions[0][0]))
 
 def main():
     args = parse(sys.argv[1:])
@@ -85,7 +84,16 @@ def main():
     if not os.path.exists(saved_embed_path):
         os.makedirs(saved_embed_path)
 
-    run(args)
+    dataset = CustomDataGenerator(args)
+    model_wrapper = Wrapper(args, dataset)
+    accuracy_list, precision_list, recall_list, f1_list, best_f1_list = model_wrapper.run(args)
+
+    print("\n\n>>>>>>>>>>Final results across all folds<<<<<<<<<<<<<<")
+    print("Accuracy: {:.4f}".format(np.mean(accuracy_list)))
+    print("Precision : {:.4f}".format(np.mean(precision_list)))
+    print("Recall: {:.4f}".format(np.mean(recall_list)))
+    print("F1: {:.4f}".format(np.mean(f1_list)))
+    print("Best F1: {:.4f}".format(np.max(best_f1_list)))
 
 if __name__ == '__main__':
     main()

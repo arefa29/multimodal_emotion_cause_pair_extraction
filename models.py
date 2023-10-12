@@ -43,16 +43,22 @@ class MultipleCauseClassifier(nn.Module):
     """Gives probability for each pair within each conversation whether that utt-pair has a cause"""
     def __init__(self, input_dim, num_utt_tensors, num_labels):
         super(MultipleCauseClassifier, self).__init__()
+        self.input_dim = input_dim
         self.num_utt_tensors = num_utt_tensors
 
         # Linear layers for each tensor
-        self.linear_layers = nn.ModuleList([nn.Linear(input_dim, num_labels) for _ in range(num_utt_tensors)])
-        self.softmax = nn.Softmax(dim=1)
+        self.linear_layers = nn.ModuleList([nn.Linear(self.input_dim, 1) for _ in range(self.num_utt_tensors)])
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
+        probabilities = []
         for tensor, linear in zip(x, self.linear_layers):
-            tensor_probs = self.softmax(linear(tensor))
+            tensor_probs = linear(tensor)
+            # The output will have shape (35, 1) change to (35)
+            tensor_probs = tensor_probs.squeeze()
+            tensor_probs = self.sigmoid(tensor_probs)
             probabilities.append(tensor_probs)
+        probabilities = torch.stack(probabilities)
         return probabilities
 
 class EmotionCausePairClassifierModel(nn.Module):
@@ -72,7 +78,7 @@ class EmotionCausePairClassifierModel(nn.Module):
             pairs = []
             emotion_id = emotion_idxs[idx]
             for j in range(len(convo)):
-                pair = torch.cat((convo[j], convo[emotion_id]))
+                pair = torch.cat((convo[j], modified_embeddings[idx][emotion_id]))
                 pairs.append(pair)
             utt_pairs.append(pairs)
         # Convert to torch tensor

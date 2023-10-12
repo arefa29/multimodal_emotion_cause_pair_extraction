@@ -7,26 +7,25 @@ import json
 import tarfile
 import argparse
 import pickle
-from utils import get_stacked_tensor
+from utils import get_stacked_tensor, convert_list_to_tensor
+import gc
+
+gc.collect()
 
 class CustomDataset(Dataset):
-    def __init__(self, input_embeddings, y_cause_labels, true_lengths):
+    def __init__(self, input_embeddings, y_cause_labels, true_lengths, given_emotion_idxs):
         self.x_input_embeddings = input_embeddings
         self.y_cause_labels = y_cause_labels
         self.true_lengths = true_lengths
+        self.given_emotion_idxs = given_emotion_idxs
 
     def __len__(self):
         return len(self.x_input_embeddings)
 
-    df __getitem__(self, idx):
+    def __getitem__(self, idx):
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        sample = {
-            'input_embeddings': self.x_input_embeddings[idx],
-            'y_cause_labels': self.y_cause_labels[idx],
-            'true_lengths': self.true_lengths[idx],
-        }
-        return sample
+        return self.x_input_embeddings[idx], self.y_cause_labels[idx], self.true_lengths[idx], self.given_emotion_idxs[idx]
 
 class CustomDataGenerator():
     def __init__(self, args):
@@ -35,7 +34,7 @@ class CustomDataGenerator():
         self.max_convo_len = args.max_convo_len
         self.text_input_path = os.path.join(os.path.join(args.input_dir, args.text_input_dir),args.text_file)
         self.video_input_path = os.path.join(os.path.join(args.input_dir, args.video_input_dir), args.videos_folder)
-        self.text_embeddings, self.emotion_labels, self.convo_lengths, self.cause_labels, self.given_emotions = self.get_text_embeddings(args.embedding_path, args.labels_path, args.lengths_path, args.causes_path, args.given_emotions_path)
+        self.text_embeddings, self.emotion_labels, self.lengths, self.cause_labels, self.given_emotion_idxs = self.get_text_embeddings(args.embedding_path, args.labels_path, args.lengths_path, args.causes_path, args.given_emotions_path)
         self.emotion_idx = dict(zip(['anger', 'disgust', 'fear', 'sadness', 'neutral','joy','surprise'], range(7)))
         self.seed = args.seed
 
@@ -48,7 +47,7 @@ class CustomDataGenerator():
             file = open(self.text_input_path, 'r', encoding='utf-8')
             data = json.load(file)
             # remove 
-            data = data[:10]
+            data = data[:20]
 
             tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
             model = BertModel.from_pretrained('bert-base-uncased', output_hidden_states=True)
@@ -95,6 +94,7 @@ class CustomDataGenerator():
                     sent_embedding = torch.mean(token_vecs, dim=0) # each of 768 dim
                     convo_embeddings.append(sent_embedding)
 
+                gc.collect()
                 text_embeddings.append(convo_embeddings)
                 emo_labels.append(labels)
                 num_utt = len(convo_embeddings)
@@ -109,6 +109,10 @@ class CustomDataGenerator():
             text_embeddings, causes, lengths = self.pad_conversation_lists(text_embeddings, causes)
             # convert list of list of tensors to a pytorch tensor
             text_embeddings = get_stacked_tensor(text_embeddings)
+            causes = convert_list_to_tensor(causes)
+            lengths = torch.tensor(lengths)
+            given_emo_utt = torch.tensor(given_emo_utt)
+
             # Save the embeddings and emotion labels
             with open(embedding_path, 'wb') as f:
                 pickle.dump(text_embeddings, f)
@@ -146,6 +150,7 @@ class CustomDataGenerator():
         padding_tensor = torch.zeros(tensor_dim)
         new_text_embeddings = []
         lengths = []
+        new_causes = []
 
         for convo_list, cause_vec in zip(text_embeddings, causes):
             length = 0
@@ -161,7 +166,9 @@ class CustomDataGenerator():
                 cause_vec = cause_vec[:self.max_convo_len]
             new_text_embeddings.append(convo_list)
             lengths.append(length)
-        return new_text_embeddings, causes, lengths
+            new_causes.append(cause_vec)
+
+        return new_text_embeddings, new_causes, lengths
 
 def extract_videos(file_name):
     f = tarfile.open(file_name)
