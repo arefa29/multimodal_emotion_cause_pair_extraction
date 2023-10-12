@@ -37,14 +37,11 @@ def parse(args):
     parser.add_argument("--output_dir", type=str, default='./output/', required=False)
     # training args
     parser.add_argument("--batch_size", type=int, default=4, help='number of example per batch', required=False)
-    parser.add_argument("--num_epochs", type=int, default=10, help='Number of epochs', required=False)
-    parser.add_argument("--lr", type=float, default=0.005, required=False)
+    parser.add_argument("--num_epochs", type=int, default=5, help='Number of epochs', required=False)
+    parser.add_argument("--lr", type=float, default=0.01, required=False)
     parser.add_argument("--l2_reg", type=float,default=1e-5,required=False,help="l2 regularization")
     parser.add_argument("--no_cuda", action="store_true", help="sets device to CPU", required=False)
-    parser.add_argument("--seed", type=int, default=7, required=False)
-    parser.add_argument("--emo",type=float,default=1.,help="loss weight of emotion ext.")
-    parser.add_argument("--cause",type=float,default=1.0,help="loss weight for cause ext.")
-
+    parser.add_argument("--seed", type=int, default=42, required=False)
     # Task
     parser.add_argument("--task",type=int,default=1,help="Subtask 1 or 2")
     # Input directory and file names
@@ -66,10 +63,19 @@ def parse(args):
     parser.add_argument("--given_emotions_path",type=str,default="./data/saved/given_emotions1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/given_emotions1.pkl' for subtask 1")
     # K-fold cross validation
     parser.add_argument("--kfold",type=int,default=5,help="Value of k for k-fold cross val")
+    # Predictor model
     parser.add_argument("--threshold",type=float,default=0.4,help="Threshold applied after the sigmoid for getting True (1) predictions")
 
     all_args = parser.parse_known_args(args)[0]
     return all_args
+
+def init_dirs(OUTPUT_DIR, INPUT_DIR):
+    LOGS_DIR = Path(OUTPUT_DIR, "logs")
+    MODEL_DIR = Path(OUTPUT_DIR, "models")
+    SAVED_DIR = Path(INPUT_DIR, "saved")
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    SAVED_DIR.mkdir(parents=True, exist_ok=True)
 
 def main():
     args = parse(sys.argv[1:])
@@ -80,9 +86,7 @@ def main():
         device = 'cpu'
     args.device = device
 
-    saved_embed_path = os.path.join(args.input_dir, 'saved')
-    if not os.path.exists(saved_embed_path):
-        os.makedirs(saved_embed_path)
+    init_dirs(args.output_dir, args.input_dir)
 
     dataset = CustomDataGenerator(args)
     model_wrapper = Wrapper(args, dataset)

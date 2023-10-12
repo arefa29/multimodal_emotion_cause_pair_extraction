@@ -8,20 +8,20 @@ import warnings
 import torch
 
 # config for wandb
-class config:
+def config(args):
     warnings.filterwarnings("ignore", category=UserWarning)
 
-    DATA_DIR = Path("./data")
-    OUTPUT_DIR = Path("./")
-    LOGS_DIR = Path(OUTPUT_DIR, "logs")
-    MODEL_DIR = Path(OUTPUT_DIR, "models")
-    OOF_DIR = Path(OUTPUT_DIR, "oof")
-    LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    OOF_DIR.mkdir(parents=True, exist_ok=True) # out-of-fold validation
+    config = {
+        INPUT_DIR = Path("./data")
+        OUTPUT_DIR = Path("./output")
+        LOGS_DIR = Path(OUTPUT_DIR, "logs")
+        MODEL_DIR = Path(OUTPUT_DIR, "models")
+        LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    }
 
 # Seeding and reproducibility
-def seed_all(seed: int = 1992):
+def seed_all(seed: int = 42):
     """Seed all random number generators"""
     print("Using Seed Number {}".format(seed));
 
@@ -47,6 +47,7 @@ def get_stacked_tensor(list_of_list_of_tensors):
     return stacked_tensor
 
 def convert_list_to_tensor(list_of_tensors):
+    """Convert a list of tensors to a 2D tensor"""
     list_of_tensors = torch.stack(list_of_tensors)
     return list_of_tensors
 
