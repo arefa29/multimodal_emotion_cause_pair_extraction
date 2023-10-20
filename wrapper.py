@@ -8,6 +8,7 @@ from models import EmotionCausePairClassifierModel
 from sklearn.model_selection import KFold, train_test_split
 from torch.utils.data import DataLoader
 import importlib
+import random
 
 import prepare_data
 importlib.reload(prepare_data)
@@ -30,6 +31,7 @@ class Wrapper():
         self.max_convo_len = args.max_convo_len
         self.batch_size = args.batch_size
         self.threshold = args.threshold
+        self.adj = dataset.adj
 
     def run(self, args):
         # Split the input data (text_embeddings) and output labels (causes) and true lengths
@@ -171,7 +173,11 @@ class Wrapper():
 
     def update(self, inputs, y_labels, lengths, emotion_ids):
         self.model.train()
-        y_preds = self.model(inputs, emotion_ids)
+        y_preds = self.model(inputs, emotion_ids, self.adj)
+        # random_idx = random.randint(0, inputs.shape[0]-1)
+        # print("output = ")
+        # print(y_preds[random_idx][:lengths[random_idx]])
+
         y_pred_mask = [torch.ones(length) for length in lengths]
         zero_lens = [(self.max_convo_len - length) for length in lengths]
         y_pred_mask = torch.stack([t for t in [torch.cat((t1, torch.zeros(l)),dim=0) for t1, l in zip(y_pred_mask, zero_lens)]])
@@ -180,7 +186,7 @@ class Wrapper():
         loss = masked_loss / y_pred_mask.sum() #only consider the outputs for actual utt emb, not paddings
         binary_y_preds = (y_preds > self.threshold).float()
         correct = (y_preds == y_labels).sum().item()
-        print(f"Correct = {correct}")
+        # print(f"Correct = {correct}")
 
         self.model.zero_grad()
         self.optimizer.zero_grad()
@@ -211,7 +217,7 @@ class Wrapper():
 
     def update_val(self, inputs, y_labels, lengths, emotion_ids):
         self.model.eval()
-        y_preds = self.model(inputs, emotion_ids)
+        y_preds = self.model(inputs, emotion_ids, self.adj)
         y_pred_mask = [torch.ones(length) for length in lengths]
         zero_lens = [(self.max_convo_len - length) for length in lengths]
         y_pred_mask = torch.stack([t for t in [torch.cat((t1, torch.zeros(l)),dim=0) for t1, l in zip(y_pred_mask, zero_lens)]])

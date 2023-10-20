@@ -9,6 +9,8 @@ import argparse
 import pickle
 from utils import get_stacked_tensor, convert_list_to_tensor
 import gc
+import numpy as np
+import scipy.sparse as sp
 
 gc.collect()
 
@@ -37,6 +39,7 @@ class CustomDataGenerator():
         self.text_embeddings, self.emotion_labels, self.lengths, self.cause_labels, self.given_emotion_idxs = self.get_text_embeddings(args.embedding_path, args.labels_path, args.lengths_path, args.causes_path, args.given_emotions_path)
         self.emotion_idx = dict(zip(['anger', 'disgust', 'fear', 'sadness', 'neutral','joy','surprise'], range(7)))
         self.seed = args.seed
+        self.adj = self.get_adj(self.max_convo_len, args.batch_size)
 
     def __len__(self):
         return len(self.text_embeddings)
@@ -74,7 +77,7 @@ class CustomDataGenerator():
                     encoded_dict = tokenizer.encode_plus(
                                 text,                      # Sentence to split into tokens
                                 add_special_tokens = True, # Add special token '[CLS]' and '[SEP]'
-                                max_length = self.max_sen_len,           # Pad & truncate all sentences.
+                                max_length = self.max_sen_len, # Pad & truncate all sentences.
                                 pad_to_max_length = True,
                                 return_attention_mask = True,   # Construct attention masks.
                                 return_tensors = 'pt',     # Return pytorch tensors.
@@ -169,6 +172,17 @@ class CustomDataGenerator():
             new_causes.append(cause_vec)
 
         return new_text_embeddings, new_causes, lengths
+
+    def get_adj(self, max_convo_len, batch_size):
+        N = max_convo_len
+        adj_b = []
+        for i in range(batch_size):
+            adj = np.ones((N, N))
+            adj = sp.coo_matrix(adj) # not needed now
+            adj = sp.coo_matrix((adj.data, (adj.row, adj.col)),
+                                shape=(N, N), dtype=np.float32)
+            adj_b.append(adj.toarray())
+        return adj_b
 
 def extract_videos(file_name):
     f = tarfile.open(file_name)

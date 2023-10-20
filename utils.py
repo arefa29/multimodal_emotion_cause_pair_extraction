@@ -11,14 +11,12 @@ import torch
 def config(args):
     warnings.filterwarnings("ignore", category=UserWarning)
 
-    config = {
-        INPUT_DIR = Path("./data")
-        OUTPUT_DIR = Path("./output")
-        LOGS_DIR = Path(OUTPUT_DIR, "logs")
-        MODEL_DIR = Path(OUTPUT_DIR, "models")
-        LOGS_DIR.mkdir(parents=True, exist_ok=True)
-        MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    }
+    #     OUTPUT_DIR: Path("./output")
+    #     LOGS_DIR: Path(OUTPUT_DIR, "logs")
+    #     MODEL_DIR: Path(OUTPUT_DIR, "models")
+    #     LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    #     MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    # }
 
 # Seeding and reproducibility
 def seed_all(seed: int = 42):
