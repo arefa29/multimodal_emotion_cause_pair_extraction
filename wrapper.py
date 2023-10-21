@@ -180,7 +180,7 @@ class Wrapper():
 
         y_pred_mask = [torch.ones(length) for length in lengths]
         zero_lens = [(self.max_convo_len - length) for length in lengths]
-        y_pred_mask = torch.stack([t for t in [torch.cat((t1, torch.zeros(l)),dim=0) for t1, l in zip(y_pred_mask, zero_lens)]])
+        y_pred_mask = torch.stack([t for t in [torch.cat((t1, torch.zeros(l)),dim=0) for t1, l in zip(y_pred_mask, zero_lens)]]).to(self.device)
         loss = self.criterion(y_preds, y_labels)
         masked_loss = torch.sum(loss * y_pred_mask)
         loss = masked_loss / y_pred_mask.sum() #only consider the outputs for actual utt emb, not paddings
@@ -213,14 +213,14 @@ class Wrapper():
                     val_epoch_loss += batch_loss
                     prog_bar.set_description("Epoch: %d\tStep: %d\tValidation Loss: %0.4f" % (epoch+1, step, batch_loss))
                     prog_bar.update()
-        return val_epoch_loss / len(self.val_loader), tot_tp, tot_fp, tot_fn
+        return val_epoch_loss / len(self.val_loader), tot_tp.cpu(), tot_fp.cpu(), tot_fn.cpu()
 
     def update_val(self, inputs, y_labels, lengths, emotion_ids):
         self.model.eval()
         y_preds = self.model(inputs, emotion_ids, self.adj)
         y_pred_mask = [torch.ones(length) for length in lengths]
         zero_lens = [(self.max_convo_len - length) for length in lengths]
-        y_pred_mask = torch.stack([t for t in [torch.cat((t1, torch.zeros(l)),dim=0) for t1, l in zip(y_pred_mask, zero_lens)]])
+        y_pred_mask = torch.stack([t for t in [torch.cat((t1, torch.zeros(l)),dim=0) for t1, l in zip(y_pred_mask, zero_lens)]]).to(self.device)
         loss = self.criterion(y_preds, y_labels)
         masked_loss = torch.sum(loss * y_pred_mask)
         loss = masked_loss / y_pred_mask.sum() #only consider the outputs for actual utt emb, not paddings

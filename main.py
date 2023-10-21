@@ -88,6 +88,7 @@ def main():
     else:
         device = 'cpu'
     args.device = device
+    print(device)
 
     init_dirs(args.output_dir, args.input_dir)
 
