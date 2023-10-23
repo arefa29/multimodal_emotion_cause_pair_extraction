@@ -34,8 +34,8 @@ class CustomDataGenerator():
         self.device = args.device
         self.max_sen_len = args.max_sen_len
         self.max_convo_len = args.max_convo_len
-        self.text_input_path = os.path.join(os.path.join(args.input_dir, args.text_input_dir),args.text_file)
-        self.video_input_path = os.path.join(os.path.join(args.input_dir, args.video_input_dir), args.videos_folder)
+        self.text_input_path = os.path.join(args.input_dir, args.text_input_dir, args.text_file)
+        self.video_input_path = os.path.join(args.input_dir, args.video_input_dir, args.videos_folder)
         self.text_embeddings, self.emotion_labels, self.lengths, self.cause_labels, self.given_emotion_idxs = self.get_text_embeddings(args.embedding_path, args.labels_path, args.lengths_path, args.causes_path, args.given_emotions_path)
         self.emotion_idx = dict(zip(['anger', 'disgust', 'fear', 'sadness', 'neutral','joy','surprise'], range(7)))
         self.seed = args.seed

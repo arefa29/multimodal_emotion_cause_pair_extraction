@@ -10,14 +10,9 @@ import argparse
 import pickle
 import numpy as np
 import importlib
+import wandb
 
-import prepare_data
-import wrapper
-
-importlib.reload(wrapper)
-
-from prepare_data import CustomDataGenerator
-from wrapper import Wrapper
+from wrapper_new import Wrapper
 
 # Command line arguments
 def parse(args):
@@ -64,10 +59,11 @@ def parse(args):
     # K-fold cross validation
     parser.add_argument("--kfold",type=int,default=5,help="Value of k for k-fold cross val")
     # Predictor model
-    parser.add_argument("--threshold",type=float,default=0.4,help="Threshold applied after the sigmoid for getting True (1) predictions")
+    parser.add_argument("--threshold",type=float,default=0.5,help="Threshold applied after the sigmoid for getting True (1) predictions")
     # GAT
     parser.add_argument("--num_layers_gat",type=int,default=4)
     parser.add_argument("--num_heads_per_layer_gat",type=int,default=4)
+    parser.add_argument("--num_features_per_layer_gat",type=int,default=192)
 
     all_args = parser.parse_known_args(args)[0]
     return all_args
@@ -81,6 +77,7 @@ def init_dirs(OUTPUT_DIR, INPUT_DIR):
     SAVED_DIR.mkdir(parents=True, exist_ok=True)
 
 def main():
+    seed_all()
     args = parse(sys.argv[1:])
 
     if torch.cuda.is_available():
@@ -92,16 +89,48 @@ def main():
 
     init_dirs(args.output_dir, args.input_dir)
 
-    dataset = CustomDataGenerator(args)
-    model_wrapper = Wrapper(args, dataset)
-    accuracy_list, precision_list, recall_list, f1_list, best_f1_list = model_wrapper.run(args)
+    # Check if fold json files exist
+    if not os.path.exists(os.path.join(args.input_dir, args.text_input_dir, f"split{args.kfold}")):
+        make_fold_files(args)
 
-    print("\n\n>>>>>>>>>>Final results across all folds<<<<<<<<<<<<<<")
-    print("Accuracy: {:.4f}".format(np.mean(accuracy_list)))
-    print("Precision : {:.4f}".format(np.mean(precision_list)))
-    print("Recall: {:.4f}".format(np.mean(recall_list)))
-    print("F1: {:.4f}".format(np.mean(f1_list)))
-    print("Best F1: {:.4f}".format(np.max(best_f1_list)))
+    if args.task == 2:
+        model_wrapper = Wrapper2(args)
+        cause_aprfb, emotion_aprfb, pair_aprfb = model_wrapper.run(args)
+
+        print("\n\n>>>>>>>>>>Final results across all folds<<<<<<<<<<<<<<")
+        print("Cause Prediction")
+        print("Accuracy: {:.4f}".format(np.mean(cause_aprfb['acc'])))
+        print("Precision: {:.4f}".format(np.mean(cause_aprfb['p'])))
+        print("Recall: {:.4f}".format(np.mean(cause_aprfb['r'])))
+        print("F1: {:.4f}".format(np.mean(cause_aprfb['f1'])))
+        print("Best F1: {:.4f}".format(np.mean(cause_aprfb['bf1'])))
+
+        print("Emotion Prediction")
+        print("Accuracy: {:.4f}".format(np.mean(emotion_aprfb['acc'])))
+        print("Precision: {:.4f}".format(np.mean(emotion_aprfb['p'])))
+        print("Recall: {:.4f}".format(np.mean(emotion_aprfb['r'])))
+        print("F1: {:.4f}".format(np.mean(emotion_aprfb['f1'])))
+        print("Best F1: {:.4f}".format(np.mean(emotion_aprfb['bf1'])))
+
+        print("Emotion-Cause Pair Prediction")
+        print("Accuracy: {:.4f}".format(np.mean(cause_aprfb['acc'])))
+        print("Precision: {:.4f}".format(np.mean(cause_aprfb['p'])))
+        print("Recall: {:.4f}".format(np.mean(cause_aprfb['r'])))
+        print("F1: {:.4f}".format(np.mean(cause_aprfb['f1'])))
+        print("Best F1: {:.4f}".format(np.mean(cause_aprfb['bf1'])))
+    else:
+        model_wrapper = Wrapper(args)
+        cause_aprfb, emotion_aprfb = model_wrapper.run(args)
+
+        print("\n\n>>>>>>>>>>Final results across all folds<<<<<<<<<<<<<<")
+        print("Accuracy: {:.4f}".format(np.mean(cause_aprfb['acc'])))
+        print("Precision: {:.4f}".format(np.mean(cause_aprfb['p'])))
+        print("Recall: {:.4f}".format(np.mean(cause_aprfb['r'])))
+        print("F1: {:.4f}".format(np.mean(cause_aprfb['f'])))
+        print("Best F1: {:.4f}".format(np.mean(cause_aprfb['b'])))
+
+    wandb.finish()
+
 
 if __name__ == '__main__':
     main()

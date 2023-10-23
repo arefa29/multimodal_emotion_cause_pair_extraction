@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.nn.init as init
-from utils import get_stacked_tensor
+from transformers import BertModel
 
 class EmbeddingModifierTransformer(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_heads, num_layers):
@@ -77,8 +77,9 @@ class GAT(nn.Module):
             in_dim = self.gnn_dims[i] * self.num_heads_per_layer[i - 1] if i != 0 else self.gnn_dims[i]
             self.gnn_layers.append(GraphAttentionLayer(self.num_heads_per_layer[i], in_dim, self.gnn_dims[i + 1], self.dropout, self.device))
 
-    def forward(self, embeddings, adj):
+    def forward(self, embeddings, convo_len, adj):
         batches, max_convo_len, _ = embeddings.size()
+        assert max(convo_len) == max_convo_len
 
         for i, gnn_layer in enumerate(self.gnn_layers):
             embeddings = gnn_layer(embeddings, adj)
@@ -158,28 +159,41 @@ class EmotionCausePairClassifierModel(nn.Module):
 
         self.args = args
 
-        num_features_per_layer_gat = [192, 192, 192, 192]
-        num_heads_per_layer_gat = [4,4,4,4]
+        num_features_per_layer_gat = [args.num_features_per_layer_gat] * args.num_layers_gat
+        num_heads_per_layer_gat = [args.num_heads_per_layer_gat] * args.num_layers_gat
+
+        self.bert_model = BertModel.from_pretrained('bert-base-uncased')
 
         self.transformer_model = EmbeddingModifierTransformer(args.input_dim_transformer, args.hidden_dim_transformer, args.num_heads_transformer, args.num_layers_transformer)
         self.gnn = GAT(args.num_layers_gat, num_heads_per_layer_gat, num_features_per_layer_gat, args.input_dim_transformer, args.device)
         self.classifier = MultipleCauseClassifier(args.input_dim_transformer * 2, args.max_convo_len, args.max_convo_len) # output dim of transformer as input dim and we concat 2 of them hence *2
 
-    def forward(self, input_embeddings, emotion_idxs, adj):
-        modified_embeddings = self.transformer_model(input_embeddings)
-        modified_embeddings_gat = self.gnn(modified_embeddings, adj)
+    def forward(self, emotion_idxs, bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len, adj):
+        bert_output = self.bert_model(input_ids=bert_token_b.to(self.args.device),
+                                attention_mask=bert_masks_b.to(self.args.device),
+                                token_type_ids=bert_segment_b.to(self.args.device))
+        convo_utt_embeddings = self.batched_index_select(bert_output, bert_utt_b.to(self.args.device))
+        modified_embeddings = self.transformer_model(convo_utt_embeddings)
+        modified_embeddings_gat = self.gnn(modified_embeddings, convo_len, adj)
         # Create pair of given emotion utt with all other utt in a convo
         utt_pairs = []
         for idx, convo in enumerate(modified_embeddings_gat):
-            pairs = []
             emotion_id = emotion_idxs[idx]
-            for j in range(len(convo)):
-                pair = torch.cat((convo[j], modified_embeddings_gat[idx][emotion_id]))
-                pairs.append(pair)
+            emotion_utt_emb = modified_embeddings_gat[idx][emotion_id]
+            repeated_emotion_utt_emb = emotion_utt_emb.repeat(len(convo), 1) # along dim 1
+            pairs = torch.cat((convo, repeated_emotion_utt_emb), dim=1)
             utt_pairs.append(pairs)
         # Convert to torch tensor
-        utt_pairs = get_stacked_tensor(utt_pairs)
+        utt_pairs = torch.stack(utt_pairs)
         # Classify each pair as having cause or not 
         probabilities = self.classifier(utt_pairs)
         return probabilities
+
+    def batched_index_select(self, bert_output, bert_utt_b):
+        # bert_output = (bs, convo_len, hidden_dim), bert_utt_b = (bs, convo_len)=idx of cls tokens
+        hidden_state = bert_output[0]
+        dummy = bert_utt_b.unsqueeze(2).expand(bert_utt_b.size(0), bert_utt_b.size(1), hidden_state.size(2)) # same as .expand(bs, convo_len, hidden_dim)
+        # Use gather to select specific elements from the hidden state tensor based on indices provided by bert_utt_b
+        convo_utt_embeddings = hidden_state.gather(1, dummy) # convo shape = dummy shape = (bs, convo_len, hidden_dim)
+        return convo_utt_embeddings
 
