@@ -56,7 +56,7 @@ def print_time():
 
 def make_fold_files(args):
     folder = os.path.join(args.input_dir, args.text_input_dir)
-    save_dir = os.path.join(folder, "split{}".format(args.kfold))
+    save_dir = os.path.join(folder, "s2_split{}".format(args.kfold))
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
@@ -64,7 +64,7 @@ def make_fold_files(args):
     file = open(file_path)
     data = json.load(file)
 
-    data_trainval, data_test = train_test_split(data, test_size=0.2, random_state=args.seed)
+    data_trainval, data_test = train_test_split(data, test_size=0.1, random_state=args.seed)
     save_file = os.path.join(save_dir, 'test.json')
     with open(save_file, 'w') as f:
         json.dump(data_test, f)

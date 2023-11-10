@@ -28,16 +28,17 @@ class CustomDataset(Dataset):
         self.split = args.kfold
         self.emotion_idx = dict(zip(['anger', 'disgust', 'fear', 'sadness', 'neutral','joy','surprise'], range(7)))
 
-        self.train_file = join(self.input_dir, self.text_input_dir, f"split{self.split}", "fold{}_train.json".format(fold_id))
-        self.val_file = join(self.input_dir, self.text_input_dir, f"split{self.split}", "fold{}_val.json".format(fold_id))
+        self.train_file = join(self.input_dir, self.text_input_dir, f"s2_split{self.split}", "fold{}_train.json".format(fold_id))
+        self.val_file = join(self.input_dir, self.text_input_dir, f"s2_split{self.split}", "fold{}_val.json".format(fold_id))
         if data_type == 'test':
-            self.test_file = join(self.input_dir, self.text_input_dir, f"split{self.split}", "test.json")
+            self.test_file = join(self.input_dir, self.text_input_dir, f"s2_split{self.split}", "test.json")
 
         self.batch_size = args.batch_size
         self.epochs = args.num_epochs
         self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
-        self.given_emotion_idxs, self.y_emotions_labels, self.y_causes_labels, \
+        self.y_emotions_labels, self.y_causes_labels, \
+        self.y_pairs, \
         self.convo_len_list, \
         self.bert_token_list, self.bert_utt_idx_list, self.bert_segments_idx_list, \
         self.bert_convo_num_tokens_list = self.read_json_file(self.data_type)
@@ -46,26 +47,26 @@ class CustomDataset(Dataset):
         return len(self.y_causes_labels)
 
     def __getitem__(self, idx):
-        given_emotion_idx = self.given_emotion_idxs[idx]
         y_emotions, y_causes = self.y_emotions_labels[idx], self.y_causes_labels[idx]
+        y_prs = self.y_pairs[idx]
         convo_len =self.convo_len_list[idx]
         bert_token, bert_utt_idx = self.bert_token_list[idx], self.bert_utt_idx_list[idx]
         bert_segments_idx, bert_convo_num_tokens = self.bert_segments_idx_list[idx], self.bert_convo_num_tokens_list[idx]
 
         if bert_convo_num_tokens > 512:
-            given_emotion_idx, \
             y_emotions, y_causes, \
+            y_prs, \
             convo_len, \
             bert_token, bert_utt_idx, \
-            bert_segments_idx, bert_convo_num_tokens = self.token_trunk(given_emotion_idx, y_emotions, y_causes, convo_len, bert_token, bert_utt_idx, bert_segments_idx, bert_convo_num_tokens)
+            bert_segments_idx, bert_convo_num_tokens = self.token_trunk(y_emotions, y_causes, y_prs, convo_len, bert_token, bert_utt_idx, bert_segments_idx, bert_convo_num_tokens)
 
         bert_token = torch.LongTensor(bert_token)
         bert_segments_idx = torch.LongTensor(bert_segments_idx)
         bert_utt_idx = torch.LongTensor(bert_utt_idx)
 
         assert convo_len == len(y_emotions)
-        return given_emotion_idx, y_emotions, y_causes, convo_len, \
-                bert_token, bert_segments_idx, bert_utt_idx, bert_convo_num_tokens
+        return y_emotions, y_causes, y_prs, convo_len, \
+               bert_token, bert_segments_idx, bert_utt_idx, bert_convo_num_tokens
 
     def read_json_file(self, data_type):
         if data_type == 'train':
@@ -78,32 +79,33 @@ class CustomDataset(Dataset):
         with open(data_file, 'r') as f:
             data_list = json.load(f)
 
-        given_emotion_idxs = []
         convo_len_list = []
         y_emotions_labels, y_causes_labels = [], []
+        y_pairs = []
         bert_token_list = []
         bert_utt_idx_list = []
         bert_segments_idx_list = []
         bert_convo_num_tokens_list = []
 
         for convo in data_list:
-            # Store the given target emotion utterance index in conversation, 0 based
-            emo_utt_num = int(convo['emotion_utterance_ID'].split('utt')[1])
-            given_emotion_idxs.append(emo_utt_num - 1)
-
             convo_len = len(convo['conversation'])
             convo_len_list.append(convo_len)
 
-            # For every sample given store whether each utt is a cause: true(1) or false(0) 
             y_causes = np.zeros(convo_len)
-            for c in convo['cause_utterances']:
-                y_causes[int(c) - 1] = 1.
-
-            y_emotions = []
+            y_emotions = np.zeros(convo_len)
+            y_prs = []
+            for pair in convo["emotion-cause_pairs"]:
+                emo_id = int(pair[0].strip('_')[0]) - 1
+                cause_id = int(pair[1]) - 1
+                y_causes[cause_id] = 1.
+                y_emotions[emo_id] = 1.
+                y_pair = [emo_id, cause_id]
+                y_prs.append(y_pair)
 
             doc_str = ''
+            # y_emotions = []
             for utt in convo['conversation']:
-                y_emotions.append(self.emotion_idx[utt['emotion']])
+                # y_emotions.append(self.emotion_idx[utt['emotion']])
 
                 doc_str += '[CLS] ' + utt['text'] + ' [SEP] '
 
@@ -132,47 +134,33 @@ class CustomDataset(Dataset):
 
             y_emotions_labels.append(y_emotions)
             y_causes_labels.append(y_causes)
+            y_pairs.append(y_prs)
 
-        return given_emotion_idxs, y_emotions_labels, y_causes_labels, convo_len_list, \
+        return y_emotions_labels, y_causes_labels, y_pairs, convo_len_list, \
                 bert_token_list, bert_utt_idx_list, bert_segments_idx_list, bert_convo_num_tokens_list
 
-    def token_trunk(self, given_emotion_idx, y_emotions, y_causes, convo_len, bert_tokens, bert_utt_idx, bert_segments_idx, bert_convo_num_tokens):
-        # Try to keep the half which contains the given emotion
-
-        if given_emotion_idx >= convo_len / 2: # this means emotion is in the second half, we should keep the second half of tokens, until the end
-            i = 0
-            while True:
-                temp_bert_token = bert_tokens[bert_utt_idx[i]: ] # bert_utt_idx are idxs of cls only, we're trying to choose the first cls from where num of tokens <= 512
-                if len(temp_bert_token) <= 512:
-                    cls_idx = bert_utt_idx[i]
-                    bert_tokens = bert_tokens[cls_idx:]
-                    bert_segments_idx = bert_segments_idx[cls_idx: ]
-                    bert_utt_idx = [p - cls_idx for p in bert_utt_idx[i: ]]
-                    given_emotion_idx = given_emotion_idx - i
-                    y_emotions = y_emotions[i: ]
-                    y_causes = y_causes[i: ]
-                    convo_len = convo_len - i
-                    break
-                i = i + 1
-
-        if given_emotion_idx < convo_len / 2:
-            i = convo_len - 1 # num of cls = convo len, i gives last cls, i => utt
-            while True:
-                temp_bert_token = bert_tokens[ :bert_utt_idx[i]] #bert_utt_idx[i] not included
-                if len(temp_bert_token) <= 512:
-                    cls_idx = bert_utt_idx[i] # => tokens in utt
-                    bert_tokens = bert_tokens[ :cls_idx]
-                    bert_segments_idx = bert_segments_idx[ :cls_idx]
-                    bert_utt_idx = bert_utt_idx[ :i] # don't include ith one
-                    y_emotions = y_emotions[ :i]
-                    y_causes = y_causes[ :i]
-                    convo_len = i
-                    break
-                i = i - 1
-        return given_emotion_idx, y_emotions, y_causes, convo_len, bert_tokens, bert_utt_idx, bert_segments_idx, bert_convo_num_tokens
+    def token_trunk(self, y_emotions, y_causes, y_pairs, convo_len, bert_tokens, bert_utt_idx, bert_segments_idx, bert_convo_num_tokens):
+        i = 0
+        while True:
+            temp_bert_token = bert_tokens[bert_utt_idx[i]: ] # bert_utt_idx are idxs of cls only, we're trying to choose the first cls from where num of tokens <= 512
+            if len(temp_bert_token) <= 512:
+                cls_idx = bert_utt_idx[i]
+                bert_tokens = bert_tokens[cls_idx:]
+                bert_segments_idx = bert_segments_idx[cls_idx: ]
+                bert_utt_idx = [p - cls_idx for p in bert_utt_idx[i: ]]
+                y_emotions = y_emotions[i: ]
+                y_causes = y_causes[i: ]
+                new_y_pairs = []
+                for p in y_pairs:
+                    if p[0] >= i and p[1] >= i:
+                        new_y_pairs.append([p[0]-i, p[1]-i])
+                convo_len = convo_len - i
+                break
+            i = i + 1
+        return y_emotions, y_causes, new_y_pairs, convo_len, bert_tokens, bert_utt_idx, bert_segments_idx, bert_convo_num_tokens
 
 def bert_batch_preprocessing(batch):
-    given_emotion_idxs_b, y_emotions_b, y_causes_b, convo_len_b, \
+    y_emotions_b, y_causes_b, y_pairs_b, convo_len_b, \
     bert_token_b, bert_segment_b, bert_utt_b, bert_convo_num_tokens_b = zip(*batch)
 
     y_mask_b, y_emotions_b, y_causes_b = pad_convo(convo_len_b, y_emotions_b, y_causes_b)
@@ -191,7 +179,7 @@ def bert_batch_preprocessing(batch):
     assert bert_segment_b.shape == bert_token_b.shape
     assert bert_segment_b.shape == bert_masks_b.shape
 
-    return np.array(given_emotion_idxs_b), np.array(adj_b), np.array(convo_len_b), \
+    return np.array(adj_b), np.array(convo_len_b), np.array(y_pairs_b), \
         np.array(y_emotions_b), np.array(y_causes_b), np.array(y_mask_b), \
         bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b
 
