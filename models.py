@@ -173,6 +173,93 @@ class CauseEmotionClassifier(nn.Module):
         x2 = self.cause_fc2(x2)
         return x1.squeeze(2), x2.squeeze(2)
 
+class PositionalEmbedding(nn.Module):
+    def __init__(self, max_seq_len, pos_emb_dim):
+        super(PositionalEmbedding, self).__init__()
+        self.pos_embedding = nn.Embedding(max_seq_len, pos_emb_dim)
+
+    def forward(self, positions):
+        """
+        Input: (batch_size, seq_len) = positions in the sequence
+        Output: (batch_size, seq_len, pos_emb_dim) = position embeddings
+        """
+        embeddings = self.pos_embedding(positions)
+        return embeddings
+
+class PairsClassifier(nn.Module):
+    def __init__(self, args):
+        super(PairsClassifier, self).__init__()
+        self.max_seq_len = args.max_convo_len
+        self.pos_emb_dim = args.pos_emb_dim
+        self.input_emb_dim = args.input_dim_transformer
+        self.concat_emb_dim = 2*self.input_emb_dim + self.pos_emb_dim
+        self.device = args.device
+
+        self.pos_emb_layer = nn.Embedding(2*self.max_seq_len + 1, self.pos_emb_dim)
+        nn.init.xavier_uniform_(self.pos_emb_layer.weight)
+        self.fc1 = nn.Linear(self.concat_emb_dim, self.concat_emb_dim)
+        self.fc2 = nn.Linear(self.concat_emb_dim, 1)
+
+    def forward(self, input_embeddings):
+        bs, seq_len, input_emb_dim = input_embeddings.size()
+        couples, rel_pos, emo_cau_pos = self.couple_generator(input_embeddings)
+
+        rel_pos = rel_pos + self.max_seq_len
+        rel_pos_emb = self.pos_emb_layer(rel_pos)
+        kernel = self.kernel_generator(rel_pos)
+        kernel = kernel.unsqueeze(0).expand(bs, -1, -1)
+        rel_pos_emb = torch.matmul(kernel, rel_pos_emb)
+        couples = torch.cat([couples, rel_pos_emb], dim=2)
+
+        couples = F.relu(self.fc1(couples))
+        couples_pred = self.fc2(couples)
+        return couples_pred.squeeze(2), emo_cau_pos
+
+    def couple_generator(self, in_emb):
+        bs, seq_len, in_dim = in_emb.size()
+        p_left = torch.cat([in_emb] * seq_len, dim=2)
+        p_left = p_left.reshape(-1, seq_len * seq_len, in_dim)
+        p_right = torch.cat([in_emb] * seq_len, dim=1)
+        p = torch.cat([p_left, p_right], dim=2)
+
+        base_idx = np.arange(1, seq_len + 1)
+        # emo_pos 1,1,1,2,2,2,3,3,3
+        emo_pos = np.concatenate([base_idx.reshape(-1, 1)] * seq_len, axis=1).reshape(1, -1)[0]
+        # cau_pos 1,2,3,1,2,3,1,2,3
+        cau_pos = np.concatenate([base_idx] * seq_len, axis=0)
+        rel_pos = cau_pos - emo_pos
+
+        rel_pos = torch.LongTensor(rel_pos).to(self.device)
+        emo_pos = torch.LongTensor(emo_pos).to(self.device)
+        cau_pos = torch.LongTensor(cau_pos).to(self.device)
+
+        if seq_len > self.max_seq_len:
+            rel_mask = np.array(list(map(lambda x: -self.max_seq_len <= x <= self.max_seq_len, rel_pos.tolist())), dtype=int)
+            rel_mask = torch.BoolTensor(rel_mask).to(self.device)
+            rel_pos = rel_pos.masked_select(rel_mask)
+            emo_pos = emo_pos.masked_select(rel_mask)
+            cau_pos = cau_pos.masked_select(rel_mask)
+
+            rel_mask = rel_mask.unsqueeze(1).expand(-1, 2 * in_dim)
+            rel_mask = rel_mask.unsqueeze(0).expand(bs, -1, -1)
+            p = p.masked_select(rel_mask)
+            p = p.reshape(bs, -1, 2 * in_dim)
+
+        assert rel_pos.size(0) == p.size(1)
+        rel_pos = rel_pos.unsqueeze(0).expand(bs, -1)
+
+        emo_cau_pos = []
+        for emo, cau in zip(emo_pos.tolist(), cau_pos.tolist()):
+            emo_cau_pos.append([emo, cau])
+        return p, rel_pos, emo_cau_pos
+
+    def kernel_generator(self, rel_pos):
+        num_couple = rel_pos.size(1)
+        rel_pos_ = rel_pos[0].type(torch.FloatTensor).to(self.device)
+        kernel_left = torch.cat([rel_pos_.reshape(-1, 1)] * num_couple, dim=1)
+        kernel = kernel_left - kernel_left.transpose(0, 1)
+        return torch.exp(-(torch.pow(kernel, 2)))
+
 class EmotionCausePairExtractorModel(nn.Module):
     def __init__(self, args):
         super(EmotionCausePairExtractorModel, self).__init__()
@@ -189,6 +276,8 @@ class EmotionCausePairExtractorModel(nn.Module):
         self.transformer_model = EmbeddingModifierTransformer(args.input_dim_transformer, args.hidden_dim_transformer, args.num_heads_transformer, args.num_layers_transformer)
         self.gnn = GAT(args.num_layers_gat, num_heads_per_layer_gat, num_features_per_layer_gat, args.input_dim_transformer, args.device)
         self.cause_emotion_classifier = CauseEmotionClassifier(args.input_dim_transformer, args.classifier_hidden_dim1)
+        self.pairs_classifier = PairsClassifier(args)
+        self.pos_emb_layer = PositionalEmbedding(args.max_convo_len, args.pos_emb_dim)
 
     def forward(self, bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len, adj):
         bert_output = self.bert_model(input_ids=bert_token_b.to(self.args.device),
@@ -199,11 +288,9 @@ class EmotionCausePairExtractorModel(nn.Module):
         # modified_embeddings = self.transformer_model(convo_utt_embeddings)
         modified_embeddings_gat = self.gnn(convo_utt_embeddings, convo_len, adj)
         emotion_pred, cause_pred = self.cause_emotion_classifier(modified_embeddings_gat)
+        pair_pred, emo_cau_pos = self.pairs_classifier(modified_embeddings_gat)
 
-        # .view(bs, n)
-        bs, n, _ = modified_embeddings_gat.shape
-
-        return emotion_pred, cause_pred
+        return emotion_pred, cause_pred, pair_pred, emo_cau_pos
 
     def batched_index_select(self, bert_output, bert_utt_b):
         # bert_output = (bs, convo_len, hidden_dim), bert_utt_b = (bs, convo_len)=idx of cls tokens
