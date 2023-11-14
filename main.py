@@ -61,8 +61,8 @@ def parse(args):
     # K-fold cross validation
     parser.add_argument("--kfold",type=int,default=10,help="Value of k for k-fold cross val")
     # Predictor model
-    parser.add_argument("--threshold",type=float,default=0.41,help="Threshold applied after the sigmoid for getting True (1) predictions")
-    parser.add_argument("--threshold_pairs",type=float,default=0.53,help="Threshold applied after the sigmoid for getting True (1) predictions for pairs")
+    parser.add_argument("--threshold",type=float,default=0.005,help="Threshold applied after the sigmoid for getting True (1) predictions")
+    parser.add_argument("--threshold_pairs",type=float,default=0.50004,help="Threshold applied after the sigmoid for getting True (1) predictions for pairs")
     # GAT
     parser.add_argument("--num_layers_gat",type=int,default=4)
     parser.add_argument("--num_heads_per_layer_gat",type=int,default=4)
