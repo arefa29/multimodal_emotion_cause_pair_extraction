@@ -64,6 +64,7 @@ class Wrapper():
             # Store best f1 across all epochs
             best_val_f1_c = None
             best_val_f1_e = None
+            best_val_f1_p = None
 
 
             # Model, loss fn and optimizer
@@ -339,31 +340,32 @@ class Wrapper():
 
     def pair_criterion(self, y_preds_p, pairs_labels_b):
         loss_pairs = self.criterion(y_preds_p, pairs_labels_b)
+        # change
 
         return loss_pairs
 
-    def accuracy(tp, fp, fn):
+    def accuracy(self, tp, fp, fn):
         if (tp + fp + fn) == 0:
             acc = 0.0
         else:
             acc = (tp) / (tp + fp + fn)
         return acc
 
-    def precision(tp, fp):
+    def precision(self, tp, fp):
         if (tp + fp) == 0:
             prec = 0.0
         else:
             prec = (tp)/(tp + fp)
         return prec
 
-    def recall(tp, fn):
+    def recall(self, tp, fn):
         if (tp + fn) == 0:
             rec = 0.0
         else:
             rec = tp / (tp + fn)
         return rec
 
-    def f1_score(precision, recall):
+    def f1_score(self, precision, recall):
         if(precision + recall) == 0:
             return 0.0
         else:
