@@ -25,11 +25,13 @@ class Wrapper():
         self.device = args.device
         self.max_convo_len = args.max_convo_len
         self.batch_size = args.batch_size
-        self.threshold = args.threshold
+        self.threshold_emo = args.threshold_emo
+        self.threshold_cau = args.threshold_cau
         self.model = None
         self.criterion = None
         self.optimizer = None
         self.threshold_pairs = args.threshold_pairs
+        self.warmup_proportion = args.warmup_proportion
 
     def run(self, args):
         cause_aprfb = {'acc': [], 'p': [], 'r': [], 'f': [], 'b': []}
@@ -37,19 +39,21 @@ class Wrapper():
         pair_aprfb = {'acc': [], 'p': [], 'r': [], 'f': [], 'b': []}
         for fold_id in range(1, self.k + 1):
             wandb.init(
-                project="mecpe_task1",
+                project="mecpe_task2",
                 config={
                 "epochs":args.num_epochs,
                 "lr":args.lr,
                 "batch_size":args.batch_size,
-                "threshold":args.threshold,
+                "threshold_emo":args.threshold_emo,
+                "threshold_cau":args.threshold_cau,
+                "threshold_pairs":args.threshold_pairs,
                 "max_convo_len":args.max_convo_len,
                 },
                 entity='arefa2001',
                 name=f"fold{fold_id}",
                 reinit=True,
             )
-            print("\n\n>>>>>>>>>>>>>>>>>>FOLD %d<<<<<<<<<<<<<<<<<<<<<<<<" % (fold_id))
+            print("\n\n>>>>>>>>>>>>>>>>>>FOLD %d<<<<<<<<<<<<<<<<<<<<<<" % (fold_id))
             self.train_loader = build_train_data(args, fold_id)
             self.val_loader = build_inference_data(args, fold_id, data_type='valid')
             self.test_loader = build_inference_data(args, fold_id, data_type='test')
@@ -73,7 +77,8 @@ class Wrapper():
             self.criterion = nn.BCEWithLogitsLoss(reduction='mean') # apply reduction = 'none'?
             self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
             self.num_update_steps = len(self.train_loader) // self.gradient_accumulation_steps * self.num_epochs
-            scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=100, num_training_steps=self.num_update_steps)
+            self.warmup_steps = self.warmup_proportion * self.num_update_steps
+            scheduler = get_linear_schedule_with_warmup(self.optimizer, num_warmup_steps=self.warmup_steps, num_training_steps=self.num_update_steps)
 
             # Training and Validation loop
             for epoch in range(self.num_epochs):
@@ -192,26 +197,30 @@ class Wrapper():
 
     def update(self, step, bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len_b, adj_b, y_emotions_b, y_causes_b, y_mask_b, y_pairs_b, pairs_labels_b, pairs_mask_b):
         self.model.train()
-        y_preds_e, y_preds_c, y_preds_p, emo_cau_pos = self.model(bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len_b, adj_b)
+        y_preds_e, y_preds_c, y_preds_p, pairs_pos, batch_idxs = self.model(bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len_b, adj_b, y_mask_b)
         y_causes_b = torch.tensor(y_causes_b, dtype=torch.float32).to(self.device)
         y_emotions_b = torch.tensor(y_emotions_b, dtype=torch.float32).to(self.device)
         pairs_labels_b = torch.tensor(pairs_labels_b, dtype=torch.float32).to(self.device)
         y_mask_b = torch.tensor(y_mask_b).bool().to(self.device)
         pairs_mask_b = torch.tensor(pairs_mask_b).bool().to(self.device)
 
+        preds_p = torch.zeros(pairs_mask_b.shape).to(self.device)
+        for (i, j), pred, bi in zip(pairs_pos, y_preds_p, batch_idxs):
+            preds_p[bi][i * len(y_emotions_b[0]) + j] = pred
+
         # print("pair labels b {}".format(pairs_labels_b.shape))
         # print("pair preds b {}".format(y_preds_p.shape))
 
         preds_e = y_preds_e.masked_select(y_mask_b) # masked_select converts into 1d tensor
         preds_c = y_preds_c.masked_select(y_mask_b)
-        preds_p = y_preds_p.masked_select(pairs_mask_b)
+        preds_p = preds_p.masked_select(pairs_mask_b)
 
         y_causes_b = y_causes_b.masked_select(y_mask_b)
         y_emotions_b = y_emotions_b.masked_select(y_mask_b)
         pairs_labels_b = pairs_labels_b.masked_select(pairs_mask_b)
 
-        binary_y_preds_e = (torch.sigmoid(preds_e) > self.threshold).float()
-        binary_y_preds_c = (torch.sigmoid(preds_c) > self.threshold).float()
+        binary_y_preds_e = (torch.sigmoid(preds_e) > self.threshold_emo).float()
+        binary_y_preds_c = (torch.sigmoid(preds_c) > self.threshold_cau).float()
         binary_y_preds_p = (torch.sigmoid(preds_p) > self.threshold_pairs).float()
 
         # print("pair labels b {}".format(pairs_labels_b.shape))
@@ -222,6 +231,7 @@ class Wrapper():
         loss_c = self.criterion(preds_c, y_causes_b)
         loss_p = self.pair_criterion(preds_p, pairs_labels_b)
         loss = loss_e + loss_c + loss_p
+        loss = loss / self.gradient_accumulation_steps
 
         correct_c = (binary_y_preds_c == y_causes_b).sum().item()
         correct_e = (binary_y_preds_e == y_emotions_b).sum().item()
@@ -283,27 +293,32 @@ class Wrapper():
 
     def update_val(self, bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len_b, adj_b, y_emotions_b, y_causes_b, y_mask_b, y_pairs_b, pairs_labels_b, pairs_mask_b):
         self.model.eval()
-        y_preds_e, y_preds_c, y_preds_p, emo_cau_pos = self.model(bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len_b, adj_b)
+        y_preds_e, y_preds_c, y_preds_p, pairs_pos, batch_idxs = self.model(bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len_b, adj_b, y_mask_b)
         y_causes_b = torch.tensor(y_causes_b, dtype=torch.float32).to(self.device)
         y_emotions_b = torch.tensor(y_emotions_b, dtype=torch.float32).to(self.device)
         pairs_labels_b = torch.tensor(pairs_labels_b, dtype=torch.float32).to(self.device)
         y_mask_b = torch.tensor(y_mask_b).bool().to(self.device)
         pairs_mask_b = torch.tensor(pairs_mask_b).bool().to(self.device)
 
+        preds_p = torch.zeros(pairs_mask_b.shape).to(self.device)
+        for (i, j), pred, bi in zip(pairs_pos, y_preds_p, batch_idxs):
+            preds_p[bi][i * len(y_emotions_b[0]) + j] = pred
+
         y_preds_e = y_preds_e.masked_select(y_mask_b)
         y_preds_c = y_preds_c.masked_select(y_mask_b)
         y_causes_b = y_causes_b.masked_select(y_mask_b)
         y_emotions_b = y_emotions_b.masked_select(y_mask_b)
-        preds_p = y_preds_p.masked_select(pairs_mask_b)
+        preds_p = preds_p.masked_select(pairs_mask_b)
         pairs_labels_b = pairs_labels_b.masked_select(pairs_mask_b)
 
-        binary_y_preds_e = (y_preds_e > self.threshold).float()
-        binary_y_preds_c = (y_preds_c > self.threshold).float()
+        binary_y_preds_e = (torch.sigmoid(y_preds_e) > self.threshold_emo).float()
+        binary_y_preds_c = (torch.sigmoid(y_preds_c) > self.threshold_cau).float()
         binary_y_preds_p = (torch.sigmoid(preds_p) > self.threshold_pairs).float()
 
         loss_p = self.pair_criterion(preds_p, pairs_labels_b)
         loss_e = self.criterion(y_preds_e, y_emotions_b)
         loss_c = self.criterion(y_preds_c, y_causes_b)
+        # loss = loss_e + loss_c + loss_p
         loss = loss_e + loss_c + loss_p
 
         tp, fp, fn = self.tp_fp_fn(binary_y_preds_e, binary_y_preds_c, binary_y_preds_p, y_emotions_b, y_causes_b, pairs_labels_b)
