@@ -161,16 +161,16 @@ class CauseEmotionClassifier(nn.Module):
     def __init__(self, input_dim, hidden_dim):
         super(CauseEmotionClassifier, self).__init__()
 
-        self.emotion_fc1 = nn.Linear(input_dim, hidden_dim)
-        self.emotion_fc2 = nn.Linear(hidden_dim, 1)
-        self.cause_fc1 = nn.Linear(input_dim, hidden_dim)
-        self.cause_fc2 = nn.Linear(hidden_dim, 1)
+        self.emotion_fc1 = nn.Linear(input_dim, 1)
+        # self.emotion_fc2 = nn.Linear(hidden_dim, 1)
+        self.cause_fc1 = nn.Linear(input_dim, 1)
+        # self.cause_fc2 = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
         x1 = self.emotion_fc1(x)
-        x1 = self.emotion_fc2(x1)
+        # x1 = self.emotion_fc2(x1)
         x2 = self.cause_fc1(x)
-        x2 = self.cause_fc2(x2)
+        # x2 = self.cause_fc2(x2)
         return x1.squeeze(2), x2.squeeze(2)
 
 class PositionalEmbedding(nn.Module):
@@ -240,7 +240,7 @@ class PairsClassifier(nn.Module):
     def __init__(self, args):
         super(PairsClassifier, self).__init__()
         self.max_seq_len = args.max_convo_len
-        # self.pos_emb_dim = args.pos_emb_dim
+        self.pos_emb_dim = args.pos_emb_dim
         self.input_emb_dim = args.input_dim_transformer
         # self.concat_emb_dim = 2 * self.input_emb_dim + self.pos_emb_dim
         self.concat_emb_dim = 2 * self.input_emb_dim
@@ -354,10 +354,10 @@ class EmotionCausePairExtractorModel(nn.Module):
         # convert the output to binary
         binary_preds_e = (torch.sigmoid(emotion_pred) > self.threshold_emo).float()
         indices_pred_e = []
-        print(binary_preds_e)
+        # print(binary_preds_e)
         binary_preds_c = (torch.sigmoid(cause_pred) > self.threshold_cau).float()
         indices_pred_c = []
-        print(binary_preds_c)
+        # print(binary_preds_c)
         for idx, preds in enumerate(binary_preds_e):
             preds = preds.masked_select(y_mask_b[idx])
             indices = torch.nonzero(preds == 1.)

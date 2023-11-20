@@ -38,7 +38,7 @@ def parse(args):
     parser.add_argument("--l2_reg", type=float,default=1e-5,required=False,help="l2 regularization")
     parser.add_argument("--no_cuda", action="store_true", help="sets device to CPU", required=False)
     parser.add_argument("--seed", type=int, default=42, required=False)
-    parser.add_argument("--gradient_accumulation_steps", type=int, default=2, required=False)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=1, required=False)
     parser.add_argument("--warmup_proportion", type=float, default=0.1, required=False)
     # Task
     parser.add_argument("--task",type=int,default=1,help="Subtask 1 or 2")
@@ -62,9 +62,9 @@ def parse(args):
     # K-fold cross validation
     parser.add_argument("--kfold",type=int,default=10,help="Value of k for k-fold cross val")
     # Predictor model
-    parser.add_argument("--threshold_emo",type=float,default=0.498,help="Threshold applied after the sigmoid for getting True (1) predictions")
-    parser.add_argument("--threshold_cau",type=float,default=0.49,help="Threshold applied after the sigmoid for getting True (1) predictions")
-    parser.add_argument("--threshold_pairs",type=float,default=0.5,help="Threshold applied after the sigmoid for getting True (1) predictions for pairs")
+    parser.add_argument("--threshold_emo",type=float,default=0.497,help="Threshold applied after the sigmoid for getting True (1) predictions")
+    parser.add_argument("--threshold_cau",type=float,default=0.486,help="Threshold applied after the sigmoid for getting True (1) predictions")
+    parser.add_argument("--threshold_pairs",type=float,default=0.49,help="Threshold applied after the sigmoid for getting True (1) predictions for pairs")
     # GAT
     parser.add_argument("--num_layers_gat",type=int,default=4)
     parser.add_argument("--num_heads_per_layer_gat",type=int,default=4)
