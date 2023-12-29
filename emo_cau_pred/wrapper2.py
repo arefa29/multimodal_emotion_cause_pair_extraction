@@ -33,7 +33,7 @@ class Wrapper():
         pair_aprfb = {'acc': [], 'p': [], 'r': [], 'f': [], 'b': []}
         for fold_id in range(1, self.k + 1):
             wandb.init(
-                project="mecpe_task1",
+                project="mecpe_emo_cau_pred",
                 config={
                 "epochs":args.num_epochs,
                 "lr":args.lr,

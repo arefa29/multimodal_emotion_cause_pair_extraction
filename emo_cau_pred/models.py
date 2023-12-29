@@ -4,8 +4,62 @@ import torch.nn.functional as F
 import torch.nn.init as init
 from transformers import BertModel
 import numpy as np
-import geoopt
-import itertools
+
+class EmbeddingModifierTransformer(nn.Module):
+    def __init__(self, input_dim, hidden_dim, num_heads, num_layers):
+        super(EmbeddingModifierTransformer, self).__init__()
+
+        self.self_attn = nn.MultiheadAttention(input_dim, num_heads)
+
+        self.feedforward = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, input_dim)
+        )
+
+        self.layer_norm1 = nn.LayerNorm(input_dim)
+        self.layer_norm2 = nn.LayerNorm(input_dim)
+
+        self.num_layers = num_layers
+
+    def forward(self, input_embeddings):
+        # Apply multiple layers of self-attention and feedforward networks
+        modified_embeddings = input_embeddings  # initialize
+        for _ in range(self.num_layers):
+            # Multi-Head Self-Attention, giving k, q, v
+            attn_output, _ = self.self_attn(modified_embeddings, modified_embeddings, modified_embeddings)
+            # Residual connection
+            modified_embeddings = self.layer_norm1(attn_output + modified_embeddings)
+
+            # Position-wise Feedforward Network
+            ff_output = self.feedforward(modified_embeddings)
+            # Residual connection
+            modified_embeddings = self.layer_norm2(ff_output + modified_embeddings)
+
+        return modified_embeddings
+
+class MultipleCauseClassifier(nn.Module):
+    """Gives probability for each pair within each conversation whether that utt-pair has a cause"""
+    def __init__(self, input_dim, num_utt_tensors, num_labels):
+        super(MultipleCauseClassifier, self).__init__()
+        self.input_dim = input_dim
+        self.num_utt_tensors = num_utt_tensors
+
+        # Linear layers for each tensor
+        self.linear_layers = nn.ModuleList([nn.Linear(self.input_dim, 1) for _ in range(self.num_utt_tensors)])
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        probabilities = []
+        for tensor, linear in zip(x, self.linear_layers):
+            tensor_probs = linear(tensor)
+            # The output will have shape (35, 1) change to (35)
+            tensor_probs = tensor_probs.squeeze()
+            tensor_probs = self.sigmoid(tensor_probs)
+            probabilities.append(tensor_probs)
+        probabilities = torch.stack(probabilities)
+        return probabilities
+
 
 class GAT(nn.Module):
     """References: https://github.com/Determined22/Rank-Emotion-Cause/blob/master/src/networks/rank_cp.py"""
@@ -19,7 +73,7 @@ class GAT(nn.Module):
         self.bias = bias
         self.gnn_layers = nn.ModuleList()
         self.device = device
-        self.dropout = dropout
+        self.dropout = int(dropout)
 
         for i in range(self.num_layers):
             in_dim = self.gnn_dims[i] * self.num_heads_per_layer[i - 1] if i != 0 else self.gnn_dims[i]
@@ -98,101 +152,58 @@ class GraphAttentionLayer(nn.Module):
         # Skip connection with learnable weights
         gate = F.sigmoid(self.H(in_emb))
         out_emb = gate * out_emb + (1 - gate) * in_emb # broadcast (b, 1, N, i), (b, N, i)
-        out_emb = F.dropout(out_emb, self.attn_dropout) # (b, N, i)
+        out_emb = F.dropout(out_emb, self.attn_dropout, training=self.training) # (b, N, i)
 
         return out_emb
 
-class HyperbolicLinearLayer(nn.Module):
-    def __init__(self, input_dim, output_dim, manifold):
-        super(HyperbolicLinearLayer, self).__init__()
+class CauseEmotionClassifier(nn.Module):
+    """Gives probability for given pair whether that utt-pair has a cause"""
+    def __init__(self, input_dim, hidden_dim):
+        super(CauseEmotionClassifier, self).__init__()
 
-        self.W = nn.Parameter(torch.Tensor(output_dim, input_dim))
-        self.bias = nn.Parameter(torch.Tensor(output_dim))
-
-        nn.init.kaiming_uniform_(self.W.data)
-        nn.init.zeros_(self.bias.data)
-        self.manifold = manifold
-
-    def forward(self, x):
-        hyperbolic_output = self.manifold.mobius_matvec(self.W, x) + self.bias.unsqueeze(0)
-        return hyperbolic_output
-
-class HyperbolicClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim):
-        super(HyperbolicClassifier, self).__init__()
-
-        self.ball = geoopt.PoincareBall()
-
-        self.fc1 = HyperbolicLinearLayer(input_dim, hidden_dim, self.ball)
-        self.fc2 = HyperbolicLinearLayer(hidden_dim, output_dim, self.ball)
-        self.activation = nn.ReLU()
+        self.emotion_fc1 = nn.Linear(input_dim, hidden_dim)
+        self.emotion_fc2 = nn.Linear(hidden_dim, 1)
+        self.cause_fc1 = nn.Linear(input_dim, hidden_dim)
+        self.cause_fc2 = nn.Linear(hidden_dim, 1)
 
     def forward(self, x):
-        x = self.activation(self.fc1(x))
-        x = self.fc2(x)
+        x1 = self.emotion_fc1(x)
+        x1 = self.emotion_fc2(x1)
+        x2 = self.cause_fc1(x)
+        x2 = self.cause_fc2(x2)
+        return x1.squeeze(2), x2.squeeze(2)
 
-        return x
-
-class EmotionClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_classes):
-        super(EmotionClassifier, self).__init__()
-        self.linear = nn.Linear(input_dim, num_classes)
-        # self.activation = nn.ReLU()
-        # self.out = nn.Linear(hidden_dim, num_classes)
-
-    def forward(self, x):
-        x = self.linear(x)
-        # x = self.activation(x)
-        # x = self.out(x)
-        return x
-
-class BiLSTMClassifier(nn.Module):
-    def __init__(self, input_dim, hidden_dim, num_layers, num_classes, device):
-        super(BiLSTMClassifier, self).__init__()
-        self.hidden_dim = hidden_dim
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers, batch_first=True, bidirectional=True)
-        self.fc = nn.Linear(hidden_dim * 2, num_classes)
-        self.device = device
-
-    def forward(self, x):
-        x = x.unsqueeze(1)
-        h0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_dim).to(self.device)
-        c0 = torch.zeros(self.num_layers * 2, x.size(0), self.hidden_dim).to(self.device)
-        out, state = self.lstm(x, (h0, c0))
-        # print("out shape {}".format(out.shape))
-        out_last_tstep = out[:, -1, :]
-        logits = self.fc(out_last_tstep)
-
-        return logits
-
-class EmotionRecognitionModel(nn.Module):
+class EmotionCausePairExtractorModel(nn.Module):
     def __init__(self, args):
-        super(EmotionRecognitionModel, self).__init__()
+        super(EmotionCausePairExtractorModel, self).__init__()
 
         self.args = args
+        args.classifier_hidden_dim1 = 384
+        args.classifier_hidden_dim2 = 384
+
         num_features_per_layer_gat = [args.num_features_per_layer_gat] * args.num_layers_gat
         num_heads_per_layer_gat = [args.num_heads_per_layer_gat] * args.num_layers_gat
-        num_bilstm_layers = 2
-        num_classes = 7
 
         self.bert_model = BertModel.from_pretrained('bert-base-uncased')
-        self.gnn = GAT(args.num_layers_gat, num_heads_per_layer_gat, num_features_per_layer_gat, args.input_dim_transformer, args.device)
-        self.emotion_classifier = EmotionClassifier(args.input_dim_transformer, args.input_dim_transformer // 2, 7)
-        # self.emotion_classifier = BiLSTMClassifier(args.input_dim_transformer, args.input_dim_transformer // 2, num_bilstm_layers, num_classes, self.args.device)
 
-    def forward(self, bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len, adj, y_mask_b):
+        self.transformer_model = EmbeddingModifierTransformer(args.input_dim_transformer, args.hidden_dim_transformer, args.num_heads_transformer, args.num_layers_transformer)
+        self.gnn = GAT(args.num_layers_gat, num_heads_per_layer_gat, num_features_per_layer_gat, args.input_dim_transformer, args.device)
+        self.cause_emotion_classifier = CauseEmotionClassifier(args.input_dim_transformer, args.classifier_hidden_dim1)
+
+    def forward(self, bert_token_b, bert_segment_b, bert_masks_b, bert_utt_b, convo_len, adj):
         bert_output = self.bert_model(input_ids=bert_token_b.to(self.args.device),
                                 attention_mask=bert_masks_b.to(self.args.device),
                                 token_type_ids=bert_segment_b.to(self.args.device)
                                 )
         convo_utt_embeddings = self.batched_index_select(bert_output, bert_utt_b.to(self.args.device))
+        # modified_embeddings = self.transformer_model(convo_utt_embeddings)
         modified_embeddings_gat = self.gnn(convo_utt_embeddings, convo_len, adj)
-        y_mask_b_new = y_mask_b.unsqueeze(2).expand(-1, -1, self.args.input_dim_transformer)
-        modified_embeddings_gat = modified_embeddings_gat.masked_select(y_mask_b_new).reshape(-1, 768)
-        emotion_pred = self.emotion_classifier(modified_embeddings_gat)
+        emotion_pred, cause_pred = self.cause_emotion_classifier(modified_embeddings_gat)
 
-        return emotion_pred
+        # .view(bs, n)
+        bs, n, _ = modified_embeddings_gat.shape
+
+        return emotion_pred, cause_pred
 
     def batched_index_select(self, bert_output, bert_utt_b):
         # bert_output = (bs, convo_len, hidden_dim), bert_utt_b = (bs, convo_len)=idx of cls tokens
