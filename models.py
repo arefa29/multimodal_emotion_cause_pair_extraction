@@ -7,60 +7,6 @@ import numpy as np
 import geoopt
 import itertools
 
-# class EmbeddingModifierTransformer(nn.Module):
-#     def __init__(self, input_dim, hidden_dim, num_heads, num_layers):
-#         super(EmbeddingModifierTransformer, self).__init__()
-
-#         self.self_attn = nn.MultiheadAttention(input_dim, num_heads)
-
-#         self.feedforward = nn.Sequential(
-#             nn.Linear(input_dim, hidden_dim),
-#             nn.ReLU(),
-#             nn.Linear(hidden_dim, input_dim)
-#         )
-
-#         self.layer_norm1 = nn.LayerNorm(input_dim)
-#         self.layer_norm2 = nn.LayerNorm(input_dim)
-
-#         self.num_layers = num_layers
-
-#     def forward(self, input_embeddings):
-#         # Apply multiple layers of self-attention and feedforward networks
-#         modified_embeddings = input_embeddings  # initialize
-#         for _ in range(self.num_layers):
-#             # Multi-Head Self-Attention, giving k, q, v
-#             attn_output, _ = self.self_attn(modified_embeddings, modified_embeddings, modified_embeddings)
-#             # Residual connection
-#             modified_embeddings = self.layer_norm1(attn_output + modified_embeddings)
-
-#             # Position-wise Feedforward Network
-#             ff_output = self.feedforward(modified_embeddings)
-#             # Residual connection
-#             modified_embeddings = self.layer_norm2(ff_output + modified_embeddings)
-
-#         return modified_embeddings
-
-# class MultipleCauseClassifier(nn.Module):
-#     """Gives probability for each pair within each conversation whether that utt-pair has a cause"""
-#     def __init__(self, input_dim, num_utt_tensors, num_labels):
-#         super(MultipleCauseClassifier, self).__init__()
-#         self.input_dim = input_dim
-#         self.num_utt_tensors = num_utt_tensors
-
-#         self.linear_layers = nn.ModuleList([nn.Linear(self.input_dim, 1) for _ in range(self.num_utt_tensors)])
-#         self.sigmoid = nn.Sigmoid()
-
-#     def forward(self, x):
-#         probabilities = []
-#         for tensor, linear in zip(x, self.linear_layers):
-#             tensor_probs = linear(tensor)
-#             # The output will have shape (35, 1) change to (35)
-#             tensor_probs = tensor_probs.squeeze()
-#             tensor_probs = self.sigmoid(tensor_probs)
-#             probabilities.append(tensor_probs)
-#         probabilities = torch.stack(probabilities)
-#         return probabilities
-
 class GAT(nn.Module):
     """References: https://github.com/Determined22/Rank-Emotion-Cause/blob/master/src/networks/rank_cp.py"""
     def __init__(self, num_layers, num_heads_per_layer, num_features_per_layer, feat_dim, device,  dropout=0.1, bias=True):
@@ -302,48 +248,6 @@ class PairsClassifier(nn.Module):
 
         return p.view(self.bs * self.seq_len * self.seq_len, 2 * self.in_dim)
 
-        # pairs_b = []
-        # pairs_pos_b = []
-        # batch_idxs_b = []
-        # for batch_idx in range(len(indices_pred_e)):
-        #     row1 = indices_pred_e[batch_idx]
-        #     row2 = indices_pred_c[batch_idx]
-        #     pos = list(itertools.product(row1, row2))
-        #     # pos = [(x, y) for x in row1 for y in row2]
-        #     if self.device == 'cpu':
-        #         prs = [p[batch_idx][index].detach().numpy() for index in pos]
-        #     else:
-        #         prs = [p[batch_idx][index].detach().cpu().numpy() for index in pos]
-        #     batch_idxs = [batch_idx] * len(prs)
-        #     pairs_pos_b.extend(pos)
-        #     pairs_b.extend(prs)
-            # batch_idxs_b.extend(batch_idxs)
-
-        # pairs_b = torch.as_tensor(pairs_b).to(self.device)
-        # pairs_pos_b = torch.as_tensor(pairs_pos_b).to(self.device)
-        # batch_b = torch.as_tensor(batch_idxs_b).to(self.device)
-        # return pairs_b, pairs_pos_b, batch_idxs_b
-
-        # if seq_len > self.max_seq_len:
-        #     rel_mask = np.array(list(map(lambda x: -self.max_seq_len <= x <= self.max_seq_len, rel_pos.tolist())), dtype=int)
-        #     rel_mask = torch.BoolTensor(rel_mask).to(self.device)
-        #     rel_pos = rel_pos.masked_select(rel_mask)
-        #     emo_pos = emo_pos.masked_select(rel_mask)
-        #     cau_pos = cau_pos.masked_select(rel_mask)
-
-        #     rel_mask = rel_mask.unsqueeze(1).expand(-1, 2 * in_dim)
-        #     rel_mask = rel_mask.unsqueeze(0).expand(bs, -1, -1)
-        #     p = p.masked_select(rel_mask)
-        #     p = p.reshape(bs, -1, 2 * in_dim)
-
-        # assert rel_pos.size(0) == p.size(1)
-        # rel_pos = rel_pos.unsqueeze(0).expand(bs, -1)
-
-        # emo_cau_pos = []
-        # for emo, cau in zip(emo_pos.tolist(), cau_pos.tolist()):
-        #     emo_cau_pos.append([emo, cau])
-        # return p, rel_pos, emo_cau_pos
-
 class EmotionCausePairExtractorModel(nn.Module):
     def __init__(self, args):
         super(EmotionCausePairExtractorModel, self).__init__()
@@ -373,23 +277,6 @@ class EmotionCausePairExtractorModel(nn.Module):
         # modified_embeddings = self.transformer_model(convo_utt_embeddings)
         modified_embeddings_gat = self.gnn(convo_utt_embeddings, convo_len, adj)
         emotion_pred, cause_pred = self.cause_emotion_classifier(modified_embeddings_gat)
-
-        # y_mask_b = torch.tensor(y_mask_b).bool().to(self.args.device)
-        # convert the output to binary
-        # binary_preds_e = (torch.sigmoid(emotion_pred) > self.threshold_emo).float()
-        # indices_pred_e = []
-        # print(binary_preds_e)
-        # binary_preds_c = (torch.sigmoid(cause_pred) > self.threshold_cau).float()
-        # indices_pred_c = []
-        # print(binary_preds_c)
-        # for idx, preds in enumerate(binary_preds_e):
-        #     preds = preds.masked_select(y_mask_b[idx])
-        #     indices = torch.nonzero(preds == 1.)
-        #     indices_pred_e.append(indices)
-        # for idx, preds in enumerate(binary_preds_c):
-        #     preds = preds.masked_select(y_mask_b[idx])
-        #     indices = torch.nonzero(preds == 1.)
-        #     indices_pred_c.append(indices)
 
         pair_pred = self.pairs_classifier(modified_embeddings_gat, convo_len)
         return emotion_pred, cause_pred, pair_pred
