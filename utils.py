@@ -10,17 +10,6 @@ from sklearn.model_selection import train_test_split, KFold
 import json
 import time
 
-# config for wandb
-def config(args):
-    warnings.filterwarnings("ignore", category=UserWarning)
-
-    #     OUTPUT_DIR: Path("./output")
-    #     LOGS_DIR: Path(OUTPUT_DIR, "logs")
-    #     MODEL_DIR: Path(OUTPUT_DIR, "models")
-    #     LOGS_DIR.mkdir(parents=True, exist_ok=True)
-    #     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    # }
-
 # Seeding and reproducibility
 def seed_all(seed: int = 42):
     """Seed all random number generators"""
