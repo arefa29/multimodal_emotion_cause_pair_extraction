@@ -52,12 +52,6 @@ def parse(args):
     # Input structure
     parser.add_argument("--max_sen_len",type=int,default=64,help="Max number of tokens per sentence")
     parser.add_argument("--max_convo_len",type=int,default=64,help="Max number of utterances per conversation")
-    # Paths for saving computed values
-    parser.add_argument("--embedding_path",type=str,default="./data/saved/embeddings1.pkl",help="Path to already computed embeddings. Defaults to './data/saved/embeddings1.pkl' for subtask 1")
-    parser.add_argument("--labels_path",type=str,default="./data/saved/labels1.pkl",help="Path to already computed emotion labels. Defaults to './data/saved/labels1.pkl' for subtask 1")
-    parser.add_argument("--lengths_path",type=str,default="./data/saved/lengths1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/lengths1.pkl' for subtask 1")
-    parser.add_argument("--causes_path",type=str,default="./data/saved/causes1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/causes1.pkl' for subtask 1")
-    parser.add_argument("--given_emotions_path",type=str,default="./data/saved/given_emotions1.pkl",help="Path to already computed lengths of conversations. Defaults to './data/saved/given_emotions1.pkl' for subtask 1")
     # K-fold cross validation
     parser.add_argument("--kfold",type=int,default=10,help="Value of k for k-fold cross val")
     # Predictor model
