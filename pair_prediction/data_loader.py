@@ -35,9 +35,13 @@ class CustomDataset(Dataset):
 
         self.batch_size = args.batch_size
         self.epochs = args.num_epochs
+        self.bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
         self.y_emotions_labels, self.y_causes_labels, \
-        self.y_pairs = self.read_json_file(self.data_type)
+        self.y_pairs, \
+        self.convo_len_list, \
+        self.bert_token_list, self.bert_utt_idx_list, self.bert_segments_idx_list, \
+        self.bert_convo_num_tokens_list = self.read_json_file(self.data_type)
 
     def __len__(self):
         return len(self.y_causes_labels)
